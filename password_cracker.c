@@ -15,9 +15,9 @@
 char encrypted_password[MAX_PASSWORD_LEN];
 char original_password[MAX_PASSWORD_LEN];
 char decrypted_password[MAX_PASSWORD_LEN] = "";
-int password_length;
-int num_decrypters;
-int timeout;
+int password_length = 16;
+int num_decrypters = 4;
+int timeout = 10;
 int terminate = 0;
 int new_password_ready = 0;
 int password_decrypted = 0;
@@ -55,7 +55,7 @@ void *encrypter_thread_func(void *arg) {
         new_password_ready = 1;
         password_decrypted = 0;
 
-        printf("%ld [SERVER] [INFO] New password generated: %.*s, key: %.*s, After encryption: %.*s\n",
+        printf("%ld   [SERVER]      [INFO] New password generated: %.*s, key: %.*s, After encryption: %.*s\n",
                time(NULL), password_length, plain, password_length / 8, key, enc_len, enc);
 
         pthread_cond_broadcast(&new_password_cond);
@@ -69,9 +69,9 @@ void *encrypter_thread_func(void *arg) {
         int rc = pthread_cond_timedwait(&password_decrypted_cond, &lock, &ts);
 
         if (rc == 0) {
-            printf("%ld [SERVER] [OK] Password decrypted successfully: %s\n", time(NULL), decrypted_password);
+            printf("%ld   [SERVER]      [OK] Password decrypted successfully: %s\n", time(NULL), decrypted_password);
         } else {
-            printf("%ld [SERVER] [TIMEOUT] No successful decryption.\n", time(NULL));
+            printf("%ld   [SERVER]      [TIMEOUT] No successful decryption.\n", time(NULL));
         }
 
         new_password_ready = 0;
@@ -129,7 +129,7 @@ void *decrypter_thread_func(void *arg) {
                 decrypted_password[dec_len] = '\0';
                 password_decrypted = 1;
 
-                printf("%ld [CLIENT #%d] [OK] Password decrypted: %.*s, key guessed(%.*s), sending to server after %d iterations\n",
+                printf("%ld   [CLIENT #%d]   [OK] Password decrypted: %.*s, key guessed(%.*s), sending to server after %d iterations\n",
                        time(NULL), id, dec_len, attempt, password_length / 8, guess_key, iterations);
 
                 pthread_cond_signal(&password_decrypted_cond);
@@ -146,6 +146,8 @@ int main(int argc, char *argv[]) {
     MTA_CRYPT_RET_STATUS res = MTA_crypt_init();
     assert(res == MTA_CRYPT_RET_OK);
 
+    int n_flag = 0, l_flag = 0; // track required args
+
     static struct option long_options[] = {
         {"num-of-decrypters", required_argument, 0, 'n'},
         {"password-length", required_argument, 0, 'l'},
@@ -154,24 +156,39 @@ int main(int argc, char *argv[]) {
     };
 
     int opt;
-    int n_flag = 0, l_flag = 0, t_flag = 0;
     while ((opt = getopt_long(argc, argv, "n:l:t:", long_options, NULL)) != -1) {
         switch (opt) {
-            case 'n': num_decrypters = atoi(optarg); n_flag = 1; break;
-            case 'l': password_length = atoi(optarg); l_flag = 1; break;
-            case 't': timeout = atoi(optarg); t_flag = 1; break;
+            case 'n':
+                num_decrypters = atoi(optarg);
+                n_flag = 1;
+                break;
+            case 'l':
+                password_length = atoi(optarg);
+                l_flag = 1;
+                break;
+            case 't':
+                timeout = atoi(optarg);
+                break;
             default:
-                fprintf(stderr, "Usage: %s -n num -l length -t timeout\n", argv[0]);
+                fprintf(stderr, "Usage: %s [-t timeout] -n <num-of-decrypters> -l <password-length>\n", argv[0]);
                 exit(EXIT_FAILURE);
         }
     }
 
-    if (!n_flag || !l_flag || !t_flag) {
-        fprintf(stderr, "Error: All options -n, -l, and -t are required.\n");
-        fprintf(stderr, "Usage: %s -n num -l length -t timeout\n", argv[0]);
+    // Check required args
+    if (!n_flag) {
+        fprintf(stderr, "Missing num of decrypters\n");
+        fprintf(stderr, "Usage: %s [-t timeout] -n <num-of-decrypters> -l <password-length>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
 
+    if (!l_flag) {
+        fprintf(stderr, "Missing password length\n");
+        fprintf(stderr, "Usage: %s [-t timeout] -n <num-of-decrypters> -l <password-length>\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    // Now start threads
     pthread_t encrypter;
     pthread_t decrypters[num_decrypters];
     int thread_ids[num_decrypters];
@@ -190,3 +207,4 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
+
